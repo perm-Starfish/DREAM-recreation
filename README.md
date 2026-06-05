@@ -11,7 +11,7 @@
 9.  進行 joint adaptation
 10. 評估 accuracy 與 macro-F1
 
-#環境設定
+# 環境設定
 
 建立 conda 環境：
 
@@ -31,7 +31,7 @@ pip uninstall torch torchvision torchaudio -y
 
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-#專案資料夾結構
+# 專案資料夾結構
 
 DREAM_reproduction/
 
@@ -47,7 +47,7 @@ DREAM_reproduction/
 
 └── run_minimal_krono.py
 
-#使用的資料集
+# 使用的資料集
 
 原論文使用的資料集是Drebin和MalRadar，但因為沒有下載權限，這裡改用KronoDroid。原始實驗使用的惡意程式家族包含：
 
@@ -86,7 +86,7 @@ BankBot: 1241 samples
 
 FakeApp: 1064 samples
 
-#重要參數
+# 重要參數
 
 classifier_epochs: classifier訓練epoch數
 
