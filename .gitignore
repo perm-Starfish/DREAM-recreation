@@ -1,0 +1,21 @@
+#ython
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+#env
+.venv/
+env/
+*.egg-info/
+
+#lareg data and model files
+data/*.zip
+data/*.csv
+data/*.npz
+checkpoints/
+results/
+
+#os and editor files
+.DS_Store
+Thumbs.db
+.vscode/
