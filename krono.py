@@ -29,11 +29,11 @@ print("Device:", device)
 OFFICIAL = {
     "seed": 42,
     #testing!!
-    "classifier_epochs": 5,
+    "classifier_epochs": 30,
     #classifier_epochs": 250,
-    "detector_epochs": 5,
+    "detector_epochs": 30,
     #"detector_epochs": 250,
-    "adapt_epochs": 5,
+    "adapt_epochs": 30,
     #"adapt_epochs": 250,
     "batch_size": 32,
     "learning_rate": 4e-4,
@@ -763,7 +763,7 @@ def explain_topk_drift_samples(
             alpha_u=1.0,
             batch_size=10,
             #testing!!
-            exp_epochs=5,
+            exp_epochs=30,
             #exp_epochs=250,
             exp_lambda_patience=20,
             early_stop_patience=10,
@@ -925,136 +925,202 @@ def evaluate_classifier(model, X_eval, y_true):
     }
 
 #run one holdout family
-holdout_family = sorted(np.unique(y))[0]
-split = make_holdout_split(
-    X,
-    y,
-    concepts,
-    concept_mask,
-    holdout_family=holdout_family,
-    test_size=0.2,
-    seed=OFFICIAL["seed"],
-)
-print("Holdout family:", holdout_family, family_names[holdout_family])
-print("Train:", split["X_train"].shape)
-print("Test:", split["X_test"].shape)
-print("Known classes:", split["num_known_classes"])
-input_dim = split["X_train"].shape[1]
-num_known_classes = split["num_known_classes"]
-classifier = DrebinMLP(
-    input_dim=input_dim,
-    num_classes=num_known_classes,
-)
-classifier = train_classifier(
-    classifier,
-    split["X_train"],
-    split["y_train"],
-    epochs=OFFICIAL["classifier_epochs"],
-    batch_size=OFFICIAL["batch_size"],
-    lr=OFFICIAL["learning_rate"],
-)
-detector = DreamDetector(
-    input_dim=input_dim,
-    num_concepts=len(CONCEPT_NAMES),
-    hidden_dim=OFFICIAL["ae_hidden_dim"],
-    encoding_dim=OFFICIAL["ae_encoding_dim"],
-)
-detector = train_dream_detector(
-    detector,
-    classifier,
-    split["X_train"],
-    split["y_train"],
-    split["concept_train"],
-    split["mask_train"],
-    epochs=OFFICIAL["detector_epochs"],
-    batch_size=OFFICIAL["batch_size"],
-    lr=OFFICIAL["learning_rate"],
-    lambda_rec=OFFICIAL["lambda_rec"],
-    lambda_sep=OFFICIAL["lambda_sep"],
-    lambda_rel=OFFICIAL["lambda_rel"],
-    lambda_pre=OFFICIAL["lambda_pre"],
-    sep_margin=OFFICIAL["sep_margin"],
-)
-scores = dream_drift_scores(
-    classifier,
-    detector,
-    split["X_test"],
-    batch_size=OFFICIAL["batch_size"],
-    lambda_rel=OFFICIAL["lambda_rel"],
-)
-auc = roc_auc_score(split["drift_binary"], scores)
-print("Drift detection AUC:", auc)
-budget = 20
-selected_idx = select_top_k_by_score(scores, budget)
-print("Selected:", len(selected_idx))
-print("True drift selected:", int(split["drift_binary"][selected_idx].sum()), "/", budget)
-#concept space explanation for selected drift sample
-explanation_masks = explain_topk_drift_samples(
-    classifier,
-    detector,
-    split["X_train"],
-    split["y_train"],
-    split["X_test"],
-    selected_idx,
-)
-print("Explanation masks:", explanation_masks.shape)
-print("Explicit concept masks first sample:", explanation_masks[0][:10])
-print("Explicit concepts:", [CONCEPT_NAMES[i] for i in np.where(explanation_masks[0][:10] == 1)[0]])
-adapted_classifier, adapted_detector = dream_joint_adaptation_with_schedule(
-    classifier,
-    detector,
-    split["X_train"],
-    split["y_train"],
-    split["concept_train"],
-    split["mask_train"],
-    split["X_test"],
-    split["y_test_for_adapt"],
-    split["concept_test"],
-    split["mask_test"],
-    selected_idx,
-    num_total_classes=split["num_known_classes"] + 1,
-    epochs=OFFICIAL["adapt_epochs"],
-    batch_size=OFFICIAL["batch_size"],
-    lr=OFFICIAL["learning_rate"],
-    lambda_rec=OFFICIAL["lambda_rec"],
-    lambda_sep=OFFICIAL["lambda_sep"],
-    lambda_rel=OFFICIAL["lambda_rel"],
-    lambda_pre=OFFICIAL["lambda_pre"],
-    sep_margin=OFFICIAL["sep_margin"],
-    eta=OFFICIAL["eta"],
-)
-metrics = evaluate_classifier(
-    adapted_classifier,
-    split["X_test"],
-    split["y_test_for_adapt"],
-)
-print("Dream adapted classifier:", metrics)
+#holdout_family = sorted(np.unique(y))[0]
+holdout_list = [
+    "BankBot",
+    "FakeApp",
+    "Boxer",
+]
 
-##save
+all_results = []
 
-os.makedirs("checkpoints", exist_ok=True)
-os.makedirs("results", exist_ok=True)
-torch.save(
-    {
-        "classifier": classifier.state_dict(),
-        "detector": detector.state_dict(),
-        "adapted_classifier": adapted_classifier.state_dict(),
-        "adapted_detector": adapted_detector.state_dict(),
-        "input_dim": input_dim,
-        "num_known_classes": num_known_classes,
-        "concept_names": CONCEPT_NAMES,
-        "official": OFFICIAL,
-        "holdout_family": int(holdout_family),
-    },
-    "checkpoints/dream_krono_official_like_pytorch.pt",
+for holdout_name in holdout_list:
+
+    holdout_family = family_to_id[holdout_name]
+
+    print("\n")
+    print("=" * 70)
+    print("Running Holdout Family:", holdout_name)
+    print("=" * 70)
+
+    split = make_holdout_split(
+        X,
+        y,
+        concepts,
+        concept_mask,
+        holdout_family=holdout_family,
+        test_size=0.2,
+        seed=OFFICIAL["seed"],
+    )
+
+    print("Holdout family:", holdout_family, family_names[holdout_family])
+    print("Train:", split["X_train"].shape)
+    print("Test:", split["X_test"].shape)
+    print("Known classes:", split["num_known_classes"])
+    input_dim = split["X_train"].shape[1]
+    num_known_classes = split["num_known_classes"]
+    classifier = DrebinMLP(
+        input_dim=input_dim,
+        num_classes=num_known_classes,
+    )
+    classifier = train_classifier(
+        classifier,
+        split["X_train"],
+        split["y_train"],
+        epochs=OFFICIAL["classifier_epochs"],
+        batch_size=OFFICIAL["batch_size"],
+        lr=OFFICIAL["learning_rate"],
+    )
+    detector = DreamDetector(
+        input_dim=input_dim,
+        num_concepts=len(CONCEPT_NAMES),
+        hidden_dim=OFFICIAL["ae_hidden_dim"],
+        encoding_dim=OFFICIAL["ae_encoding_dim"],
+    )
+    detector = train_dream_detector(
+        detector,
+        classifier,
+        split["X_train"],
+        split["y_train"],
+        split["concept_train"],
+        split["mask_train"],
+        epochs=OFFICIAL["detector_epochs"],
+        batch_size=OFFICIAL["batch_size"],
+        lr=OFFICIAL["learning_rate"],
+        lambda_rec=OFFICIAL["lambda_rec"],
+        lambda_sep=OFFICIAL["lambda_sep"],
+        lambda_rel=OFFICIAL["lambda_rel"],
+        lambda_pre=OFFICIAL["lambda_pre"],
+        sep_margin=OFFICIAL["sep_margin"],
+    )
+    scores = dream_drift_scores(
+        classifier,
+        detector,
+        split["X_test"],
+        batch_size=OFFICIAL["batch_size"],
+        lambda_rel=OFFICIAL["lambda_rel"],
+    )
+    auc = roc_auc_score(split["drift_binary"], scores)
+    print("Drift detection AUC:", auc)
+
+    results = []
+    for budget in [20, 50, 100]:
+        selected_idx = select_top_k_by_score(scores, budget)
+        print("Selected:", len(selected_idx))
+        print("True drift selected:", int(split["drift_binary"][selected_idx].sum()), "/", budget)
+
+    #concept space explanation for selected drift sample
+        explanation_masks = explain_topk_drift_samples(
+            classifier,
+            detector,
+            split["X_train"],
+            split["y_train"],
+            split["X_test"],
+            selected_idx,
+        )
+        print("Explanation masks:", explanation_masks.shape)
+        print("Explicit concept masks first sample:", explanation_masks[0][:10])
+        print("Explicit concepts:", [CONCEPT_NAMES[i] for i in np.where(explanation_masks[0][:10] == 1)[0]])
+
+        # evaluate before adaptation on known test only
+        known_mask = split["drift_binary"] == 0
+        before_known_metrics = evaluate_classifier(
+            classifier,
+            split["X_test"][known_mask],
+            split["y_test_for_adapt"][known_mask],
+        )
+        print("Before adaptation on known families:", before_known_metrics)
+
+        # evaluate before adaptation on all test samples
+        # Note: the original classifier only has known-family outputs,
+        # so it cannot correctly predict the held-out unknown family.
+        before_all_metrics = evaluate_classifier(
+            classifier,
+            split["X_test"],
+            split["y_test_for_adapt"],
+        )
+        print("Before adaptation on all test samples:", before_all_metrics)
+
+        adapted_classifier, adapted_detector = dream_joint_adaptation_with_schedule(
+            classifier,
+            detector,
+            split["X_train"],
+            split["y_train"],
+            split["concept_train"],
+            split["mask_train"],
+            split["X_test"],
+            split["y_test_for_adapt"],
+            split["concept_test"],
+            split["mask_test"],
+            selected_idx,
+            num_total_classes=split["num_known_classes"] + 1,
+            epochs=OFFICIAL["adapt_epochs"],
+            batch_size=OFFICIAL["batch_size"],
+            lr=OFFICIAL["learning_rate"],
+            lambda_rec=OFFICIAL["lambda_rec"],
+            lambda_sep=OFFICIAL["lambda_sep"],
+            lambda_rel=OFFICIAL["lambda_rel"],
+            lambda_pre=OFFICIAL["lambda_pre"],
+            sep_margin=OFFICIAL["sep_margin"],
+            eta=OFFICIAL["eta"],
+        )
+        metrics = evaluate_classifier(
+            adapted_classifier,
+            split["X_test"],
+            split["y_test_for_adapt"],
+        )
+        print("Dream adapted classifier:", metrics)
+
+        results.append({
+            "holdout_family": holdout_name,
+            "budget": budget,
+            "auc": auc,
+            "true_drift": int(split["drift_binary"][selected_idx].sum()),
+            "before_all_accuracy": before_all_metrics["accuracy"],
+            "before_all_f1_macro": before_all_metrics["f1_macro"],
+            "after_accuracy": metrics["accuracy"],
+            "after_f1_macro": metrics["f1_macro"],
+        })
+
+    holdout_df = pd.DataFrame(results)
+    holdout_df.to_csv(
+        f"results/budget_experiment_{holdout_name}.csv",
+        index=False,
+    )
+    
+    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("results", exist_ok=True)
+    torch.save(
+        {
+            "classifier": classifier.state_dict(),
+            "detector": detector.state_dict(),
+            "adapted_classifier": adapted_classifier.state_dict(),
+            "adapted_detector": adapted_detector.state_dict(),
+            "input_dim": input_dim,
+            "num_known_classes": num_known_classes,
+            "concept_names": CONCEPT_NAMES,
+            "official": OFFICIAL,
+            "holdout_family": int(holdout_family),
+            "holdout_name": holdout_name,
+        },
+        f"checkpoints/dream_krono_{holdout_name}.pt",
+    )
+    np.savez(
+        f"results/holdout_results_{holdout_name}.npz",
+        scores=scores,
+        drift_binary=split["drift_binary"],
+        selected_idx=selected_idx,
+        explanation_masks=explanation_masks,
+        accuracy=metrics["accuracy"],
+        f1_macro=metrics["f1_macro"],
+        auc=auc,
+    )
+    
+    all_results.extend(results)
+
+final_df = pd.DataFrame(all_results)
+final_df.to_csv(
+    "results/all_holdout_results.csv",
+    index=False,
 )
-np.savez(
-    "results/one_holdout_results.npz",
-    scores=scores,
-    drift_binary=split["drift_binary"],
-    selected_idx=selected_idx,
-    explanation_masks=explanation_masks,
-    accuracy=metrics["accuracy"],
-    f1_macro=metrics["f1_macro"],
-    auc=auc,
-)
+print(final_df)
